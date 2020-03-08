@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+
+import argparse
+import re
+import subprocess
+import sys
+
+
+def get_upstream(branch_name):
+    """Get upstream information for a local branch from config."""
+    result = subprocess.run(
+        ['git', 'config', '--get-regexp', fr'^branch\.{re.escape(branch_name)}\.'],
+        capture_output=True, text=True)
+
+    if result.returncode != 0:
+        return None
+
+    upstream = {}
+    offset = len(f'branch.{branch_name}.')
+
+    for line in result.stdout.splitlines():
+        key, value = line.split()
+        key = key[offset:]
+        assert key not in upstream, f"Multiple values for 'branch.{branch_name}.{key}'"
+        upstream[key] = value
+
+    return upstream
+
+
+def get_current_branch():
+    """Get the current branch name."""
+
+    return subprocess.run(
+        ['git', 'branch', '--show-current'],
+        capture_output=True, check=True, text=True
+    ).stdout.rstrip()
+
+
+def rmbranch(branch_name):
+    current_branch = get_current_branch()
+    if branch_name == current_branch:
+        print(f"Branch '{branch_name}' is the current branch.")
+        new_branch = input('Enter a new branch name to checkout (<Enter> to abort): ')
+        if not new_branch or subprocess.run(['git', 'checkout', new_branch]).returncode:
+            return
+
+    upstream = get_upstream(branch_name)
+
+    result = subprocess.run(['git', 'branch', '-D', branch_name],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stderr, end='')
+        return result.returncode
+
+    sha = re.search(r'\(was (\w+)\)', result.stdout)[1]
+    print(result.stdout.rstrip(),
+          f"To restore, run 'git branch {branch_name} {sha}'.")
+
+    if upstream is None:
+        print(f"No upstream configured for the branch '{branch_name}'.")
+        return 0
+
+    print(f"Deleting '{upstream['merge']}' from '{upstream['remote']}'..")
+
+    # this command also removes the local remote-tracking branch
+    return subprocess.run(['git', 'push', upstream['remote'], '--delete', upstream['merge']]).returncode
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Delete a Git branch locally and remotely.')
+    parser.add_argument('branch_name', help='The branch name')
+    args = parser.parse_args()
+
+    sys.exit(rmbranch(args.branch_name))
