@@ -63,7 +63,10 @@ def rmbranch(branch_name):
     print(f"Deleting '{upstream['merge']}' from '{upstream['remote']}'..")
 
     # this command also removes the local remote-tracking branch
-    return subprocess.run(['git', 'push', upstream['remote'], '--delete', upstream['merge']]).returncode
+    return subprocess.run(
+        ['git', 'push', upstream['remote'], '--delete', upstream['merge']],
+        timeout=30
+    ).returncode
 
 
 if __name__ == '__main__':
