@@ -40,7 +40,7 @@ def rmbranch(branch_name):
     current_branch = get_current_branch()
     if branch_name == current_branch:
         print(f"Branch '{branch_name}' is the current branch.")
-        new_branch = input('Enter a new branch name to checkout (<Enter> to abort): ')
+        new_branch = input('Enter a new branch name to checkout (<Enter> to abort): ').strip()
         if not new_branch or subprocess.run(['git', 'checkout', new_branch]).returncode:
             return
 
