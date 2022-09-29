@@ -7,11 +7,16 @@ import sys
 
 
 def get_default_branch():
-    """Get the repo's default branch (master or main)"""
+    """Get the repo's "default" branch from the config. If not set, then use either master or main"""
+
+    result = subprocess.run(['git', 'config', '--get', 'rmbranch.defaultBranch'], capture_output=True, text=True)
+    if result.returncode == 0:
+        return result.stdout.rstrip()
 
     for branch_name in ('master', 'main'):
         if subprocess.run(['git', 'show-ref', '--verify', '--quiet', f'refs/heads/{branch_name}']).returncode == 0:
             return branch_name
+
     raise RuntimeError('Unable to determine the default branch for the repo')
 
 
@@ -49,24 +54,24 @@ def main():
     args = parse_args()
 
     current_branch = get_current_branch()
+    branch_name = current_branch if args.branch_name is None else args.branch_name
+    default_branch = get_default_branch()
 
-    if args.branch_name == current_branch:
-        print(f"Branch '{args.branch_name}' is the current branch.")
-    elif args.branch_name == '.':
-        args.branch_name = current_branch
+    if branch_name == default_branch:
+        print(f"Refusing to remove the default branch '{branch_name}'")
+        return 1
 
-    if args.branch_name == current_branch:
-        default_branch = get_default_branch()  # TODO: consider just using '-' (previous branch)
-        new_branch = input(f'Enter a new branch name to checkout ({default_branch}): ').strip()
+    if branch_name == current_branch:
+        new_branch = input(f'Enter a branch name to checkout ({default_branch}): ').strip()
         if not new_branch:
             new_branch = default_branch
         result = subprocess.run(['git', 'checkout', new_branch])
         if result.returncode != 0:
             return result.returncode
 
-    upstream = get_upstream(args.branch_name)
+    upstream = get_upstream(branch_name)
 
-    result = subprocess.run(['git', 'branch', '-D', args.branch_name],
+    result = subprocess.run(['git', 'branch', '-D', branch_name],
                             capture_output=True, text=True)
     if result.returncode != 0:
         print(result.stderr, end='')
@@ -74,10 +79,10 @@ def main():
 
     sha = re.search(r'\(was (\w+)\)', result.stdout)[1]
     print(result.stdout.rstrip(),
-          f"To restore, run 'git branch {args.branch_name} {sha}'.")
+          f"To restore, run 'git branch {branch_name} {sha}'.")
 
     if upstream is None:
-        print(f"No upstream configured for the branch '{args.branch_name}'.")
+        print(f"No upstream configured for the branch '{branch_name}'.")
         return 0
 
     print(f"Deleting '{upstream['merge']}' from '{upstream['remote']}'..")
@@ -91,7 +96,8 @@ def main():
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Delete a Git branch locally and remotely.')
-    parser.add_argument('branch_name', help='The branch name')
+    parser.add_argument('branch_name', nargs='?',
+                        help='The branch name. In case no argument is provided, the current branch will be used')
     return parser.parse_args()
 
 
